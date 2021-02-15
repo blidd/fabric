@@ -8,6 +8,8 @@ package validation
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"fmt"
 
 	"github.com/hyperledger/fabric-protos-go/common"
 	pb "github.com/hyperledger/fabric-protos-go/peer"
@@ -15,6 +17,7 @@ import (
 	"github.com/hyperledger/fabric/common/flogging"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
 	"github.com/hyperledger/fabric/protoutil"
+	"github.com/off-grid-block/controller"
 	"github.com/pkg/errors"
 )
 
@@ -75,9 +78,11 @@ func validateSignatureHeader(sHdr *common.SignatureHeader) error {
 		return errors.New("invalid nonce specified in the header")
 	}
 
-	// ensure that there is a creator
+	// ensure that there is a creator, either fabric or Indy
 	if sHdr.Creator == nil || len(sHdr.Creator) == 0 {
-		return errors.New("invalid creator specified in the header")
+		if sHdr.Did == nil || len(sHdr.Did) == 0 {
+			return errors.New("invalid creator specified in the header")
+		}
 	}
 
 	return nil
@@ -270,11 +275,33 @@ func ValidateTransaction(e *common.Envelope, cryptoProvider bccsp.BCCSP) (*commo
 		return nil, pb.TxValidationCode_BAD_COMMON_HEADER
 	}
 
-	// validate the signature in the envelope
-	err = checkSignatureFromCreator(shdr.Creator, e.Signature, e.Payload, chdr.ChannelId, cryptoProvider)
-	if err != nil {
-		putilsLogger.Errorf("checkSignatureFromCreator returns err %s", err)
-		return nil, pb.TxValidationCode_BAD_CREATOR_SIGNATURE
+	if shdr.Did == nil {
+		// validate the signature in the envelope
+		err = checkSignatureFromCreator(shdr.Creator, e.Signature, e.Payload, chdr.ChannelId, cryptoProvider)
+		if err != nil {
+			putilsLogger.Errorf("checkSignatureFromCreator returns err %s", err)
+			return nil, pb.TxValidationCode_BAD_CREATOR_SIGNATURE
+		}
+
+	} else {
+
+		admin, _ := controller.NewAdminController("http://admin.example.com:8021")
+		_, err = admin.GetConnection()
+		if err != nil {
+			fmt.Println("Failed to get connection in ValidateProposalMessage")
+			return nil, pb.TxValidationCode_BAD_CREATOR_SIGNATURE
+		}
+
+		// hash proposal before sending to admin agent
+		proposalHash := sha256.Sum256(e.Payload)
+		status, err := admin.VerifySignature(proposalHash[:], e.Signature, shdr.Did)
+		if !status || err != nil {
+			fmt.Println("Failed to verify signature in ValidateProposalMessage")
+			return nil, pb.TxValidationCode_BAD_CREATOR_SIGNATURE
+		}
+
+		fmt.Printf("Verify signature to admin agent complete inside ValidateTransaction with status: %v", status)
+
 	}
 
 	// TODO: ensure that creator can transact with us (some ACLs?) which set of APIs is supposed to give us this info?
@@ -285,14 +312,29 @@ func ValidateTransaction(e *common.Envelope, cryptoProvider bccsp.BCCSP) (*commo
 		// Verify that the transaction ID has been computed properly.
 		// This check is needed to ensure that the lookup into the ledger
 		// for the same TxID catches duplicates.
-		err = protoutil.CheckTxID(
-			chdr.TxId,
-			shdr.Nonce,
-			shdr.Creator)
 
-		if err != nil {
-			putilsLogger.Errorf("CheckTxID returns err %s", err)
-			return nil, pb.TxValidationCode_BAD_PROPOSAL_TXID
+		if shdr.Did == nil {
+
+			err = protoutil.CheckTxID(
+				chdr.TxId,
+				shdr.Nonce,
+				shdr.Creator)
+
+			if err != nil {
+				putilsLogger.Errorf("CheckTxID returns err %s", err)
+				return nil, pb.TxValidationCode_BAD_PROPOSAL_TXID
+			}
+		} else {
+
+			err = protoutil.CheckTxID(
+				chdr.TxId,
+				shdr.Nonce,
+				nil)
+
+			if err != nil {
+				putilsLogger.Errorf("CheckTxID returns err %s", err)
+				return nil, pb.TxValidationCode_BAD_PROPOSAL_TXID
+			}
 		}
 
 		err = validateEndorserTransaction(payload.Data, payload.Header)

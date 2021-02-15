@@ -132,7 +132,7 @@ github.com/golang/snappy
 # github.com/gorilla/handlers v1.4.0
 ## explicit
 github.com/gorilla/handlers
-# github.com/gorilla/mux v1.7.2
+# github.com/gorilla/mux v1.8.0
 ## explicit
 github.com/gorilla/mux
 # github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
@@ -215,6 +215,9 @@ github.com/miekg/pkcs11
 # github.com/mitchellh/mapstructure v1.2.2
 ## explicit
 github.com/mitchellh/mapstructure
+# github.com/off-grid-block/controller v0.0.0-20201216002433-d7659e25234d
+## explicit
+github.com/off-grid-block/controller
 # github.com/onsi/ginkgo v1.8.0
 ## explicit
 github.com/onsi/ginkgo

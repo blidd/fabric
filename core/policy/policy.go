@@ -89,6 +89,11 @@ func (p *policyChecker) CheckPolicy(channelID, policyName string, signedProp *pb
 		Signature: signedProp.Signature,
 	}}
 
+	//Skip channel policy check for Indy signature
+	if shdr.Did != nil {
+		return nil
+	}
+
 	return p.CheckPolicyBySignedData(channelID, policyName, sd)
 }
 

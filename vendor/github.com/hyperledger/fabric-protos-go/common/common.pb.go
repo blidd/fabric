@@ -449,6 +449,7 @@ type SignatureHeader struct {
 	Creator []byte `protobuf:"bytes,1,opt,name=creator,proto3" json:"creator,omitempty"`
 	// Arbitrary number that may only be used once. Can be used to detect replay attacks.
 	Nonce                []byte   `protobuf:"bytes,2,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Did                  []byte   `protobuf:"bytes,3,opt,name=did,proto3" json:"did,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -489,6 +490,13 @@ func (m *SignatureHeader) GetCreator() []byte {
 func (m *SignatureHeader) GetNonce() []byte {
 	if m != nil {
 		return m.Nonce
+	}
+	return nil
+}
+
+func (m *SignatureHeader) GetDid() []byte {
+	if m != nil {
+		return m.Did
 	}
 	return nil
 }

@@ -7,13 +7,16 @@ SPDX-License-Identifier: Apache-2.0
 package msgprocessor
 
 import (
+	"crypto/sha256"
 	"fmt"
 
+	"github.com/golang/protobuf/proto"
 	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/orderer"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/protoutil"
+	"github.com/off-grid-block/controller"
 	"github.com/pkg/errors"
 )
 
@@ -48,6 +51,22 @@ func NewSigFilter(normalPolicyName, maintenancePolicyName string, support SigFil
 
 // Apply applies the policy given, resulting in Reject or Forward, never Accept
 func (sf *SigFilter) Apply(message *cb.Envelope) error {
+
+	payload := &cb.Payload{}
+	err := proto.Unmarshal(message.Payload, payload)
+	if err != nil {
+		return fmt.Errorf("Failed unmarshaling payload")
+	}
+
+	if payload.Header == nil /* || payload.Header.SignatureHeader == nil */ {
+		return fmt.Errorf("Failed getting header")
+	}
+	shdr := &cb.SignatureHeader{}
+	err = proto.Unmarshal(payload.Header.SignatureHeader, shdr)
+	if err != nil {
+		return fmt.Errorf("GetSignatureHeaderFromBytes failed, err %s", err)
+	}
+
 	ordererConf, ok := sf.support.OrdererConfig()
 	if !ok {
 		logger.Panic("Programming error: orderer config not found")
@@ -72,10 +91,36 @@ func (sf *SigFilter) Apply(message *cb.Envelope) error {
 		return fmt.Errorf("could not find policy %s", policyName)
 	}
 
-	err = policy.EvaluateSignedData(signedData)
-	if err != nil {
-		logger.Debugf("SigFilter evaluation failed: %s, policyName: %s, ConsensusState: %s", err.Error(), policyName, ordererConf.ConsensusState())
-		return errors.Wrap(errors.WithStack(ErrPermissionDenied), err.Error())
+	// Condition added to verify Indy signed transactions by Indy verifier.
+	if shdr.Did != nil {
+		//status, err := indyverify.Indyverify(message.Payload, shdr.Did, message.Signature)
+		//if status == false || err != nil {
+		//	return fmt.Errorf("Verification of signature by Indy failed , err %s", err)
+		//}
+
+		admin, _ := controller.NewAdminController("http://admin.example.com:8021")
+		_, err = admin.GetConnection()
+		if err != nil {
+			fmt.Printf("Failed to get connection in ValidateProposalMessage: %v", err)
+			return err
+		}
+
+		// hash proposal before sending to admin agent
+		proposalHash := sha256.Sum256(message.Payload)
+		status, err := admin.VerifySignature(proposalHash[:], message.Signature, shdr.Did)
+		if !status || err != nil {
+			fmt.Printf("Failed to get verify signature in ValidateProposalMessage: %v", err)
+			return err
+		}
+
+		fmt.Printf("verify signature admin agent call complete from inside orderer with status: %v", status)
+
+	} else {
+		err = policy.EvaluateSignedData(signedData)
+		if err != nil {
+			logger.Debugf("SigFilter evaluation failed: %s, policyName: %s, ConsensusState: %s", err.Error(), policyName, ordererConf.ConsensusState())
+			return errors.Wrap(errors.WithStack(ErrPermissionDenied), err.Error())
+		}
 	}
 	return nil
 }
